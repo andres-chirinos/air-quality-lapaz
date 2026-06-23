@@ -1,0 +1,37 @@
+name: ETL Kaggle Data
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 0 1 1,4,7,10 *"
+
+jobs:
+  ejecutar:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout del repositorio
+        uses: actions/checkout@v3
+
+      - name: Configurar Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.11"
+
+      - name: Instalar dependencias
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r scripts/requirements.txt
+
+      - name: Extracción
+        run: |
+          python scripts/lapaz_air_quality_extract.py --format csv,parquet --extract-from hours
+
+      - name: Subida a Kaggle
+        env:
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+        run: |
+          python scripts/upload_kaggle.py \
+            --input-dir data \
+            --kaggle-id sociest/calidad-aire-monica \
+            --version-message "Automatic Upload $(date -u +%Y-%m-%d)"
