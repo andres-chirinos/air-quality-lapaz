@@ -1,5 +1,13 @@
 #!/usr/bin/env python3
+import pandas as pd
+import argparse
+import subprocess
+import datetime
+import hashlib
+import requests
+import json
 import os
+import sys
 import time
 import logging
 
@@ -8,24 +16,30 @@ logging.basicConfig(
     format="%(asctime)s - %(levelname)s - %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S"
 )
-import json
-import requests
-import hashlib
-import datetime
-import subprocess
-import argparse
-import pandas as pd
 
 COLUMNS_FILTERS = [
-    "id_parametro", "valor", "valor_ica", 
+    "id_parametro", "valor", "valor_ica",
     "fecha_hora_registro", "fecha_hora_calculo", "observaciones"
 ]
 
 METADATA_COLUMNS = [
-    "_metadata_source", "_metadata_request_status", 
-    "_metadata_timestamp", "_metadata_unix_timestamp", 
+    "_metadata_source", "_metadata_request_status",
+    "_metadata_timestamp", "_metadata_unix_timestamp",
     "_metadata_hash"
 ]
+
+HEADERS = {
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept-Encoding": "gzip, deflate",
+    "Accept-Language": "es,en;q=0.9",
+    "Connection": "keep-alive",
+    "DNT": "1",
+    "Host": "131.0.1.19:3002",
+    "Priority": "u=0, i",
+    "Sec-GPC": "1",
+    "Upgrade-Insecure-Requests": "1",
+    "User-Agent": "Mozilla/5.0 (X11; Linux x86_64; rv:149.0) Gecko/20100101 Firefox/149.0"
+}
 
 
 def check_connection(url="http://131.0.1.19:3002/", retries=3, delay_seconds=300):
@@ -33,20 +47,25 @@ def check_connection(url="http://131.0.1.19:3002/", retries=3, delay_seconds=300
     for attempt in range(1, retries + 1):
         try:
             # Using requests.head() which is equivalent to curl -I
-            response = requests.head(url, timeout=10)
+            response = requests.head(url, timeout=10, headers=HEADERS)
             if response.status_code == 200:
-                logging.info(f"{url} respondió correctamente en el intento {attempt}.")
+                logging.info(
+                    f"{url} respondió correctamente en el intento {attempt}.")
                 return True
             else:
-                logging.info(f"Intento {attempt}/{retries}: Código HTTP {response.status_code} devuelto por {url}.")
+                logging.info(
+                    f"Intento {attempt}/{retries}: Código HTTP {response.status_code} devuelto por {url}.")
         except Exception as e:
-            logging.error(f"Intento {attempt}/{retries}: Error al conectar a {url}: {e}")
-            
+            logging.error(
+                f"Intento {attempt}/{retries}: Error al conectar a {url}: {e}")
+
         if attempt < retries:
-            logging.info(f"Esperando {delay_seconds // 60} minutos antes del siguiente intento...")
+            logging.info(
+                f"Esperando {delay_seconds // 60} minutos antes del siguiente intento...")
             time.sleep(delay_seconds)
-            
-    logging.error(f"Falló la conexión a {url} tras {retries} intentos. Saltando todo.")
+
+    logging.error(
+        f"Falló la conexión a {url} tras {retries} intentos. Saltando todo.")
     return False
 
 
@@ -55,9 +74,9 @@ def fetch_data(url, method='GET', retries=3, delay_seconds=60):
     for attempt in range(1, retries + 1):
         try:
             if method.upper() == 'POST':
-                response = requests.post(url, timeout=100)
+                response = requests.post(url, timeout=100, headers=HEADERS)
             else:
-                response = requests.get(url, timeout=100)
+                response = requests.get(url, timeout=100, headers=HEADERS)
 
             if response.status_code in [200, 201]:
                 data = response.json()
@@ -70,14 +89,17 @@ def fetch_data(url, method='GET', retries=3, delay_seconds=60):
                 }
                 return data, metadata
             else:
-                logging.error(f"Intento {attempt}/{retries}: Falló la extracción de {url}. Status: {response.status_code}")
+                logging.error(
+                    f"Intento {attempt}/{retries}: Falló la extracción de {url}. Status: {response.status_code}")
         except Exception as e:
-            logging.error(f"Intento {attempt}/{retries}: Error de conexión al extraer {url}: {e}")
-            
+            logging.error(
+                f"Intento {attempt}/{retries}: Error de conexión al extraer {url}: {e}")
+
         if attempt < retries:
-            logging.info(f"Esperando {delay_seconds // 60} minutos antes de volver a intentar la extracción...")
+            logging.info(
+                f"Esperando {delay_seconds // 60} minutos antes de volver a intentar la extracción...")
             time.sleep(delay_seconds)
-            
+
     logging.warning(f"Se agotaron los {retries} intentos para {url}.")
     return None, None
 
@@ -85,7 +107,8 @@ def fetch_data(url, method='GET', retries=3, delay_seconds=60):
 def transform_dataset(data, metadata, fuente, add_metadata=False):
     """Normalize JSON, clean columns, apply data typing, and filter."""
     if not data:
-        return pd.DataFrame()
+        logging.error(f"No se pudo obtener data. Fallando ejecución.")
+        sys.exit(1)
 
     df = pd.json_normalize(data)
     if df.empty:
@@ -110,7 +133,7 @@ def transform_dataset(data, metadata, fuente, add_metadata=False):
             df = df.rename(columns={"valor_original": "valor"})
         if "promedio_24hrs" in df.columns:
             df = df.drop(columns=["promedio_24hrs"])
-            
+
     elif fuente == "nuevo":
         if "valor_medido" in df.columns:
             df = df.rename(columns={"valor_medido": "valor"})
@@ -122,14 +145,14 @@ def transform_dataset(data, metadata, fuente, add_metadata=False):
         final_cols = COLUMNS_FILTERS + METADATA_COLUMNS + ["fuente"]
     else:
         final_cols = COLUMNS_FILTERS + ["fuente"]
-        
+
     # Ensure numeric types for values
     for numeric_col in ["valor", "valor_ica"]:
         if numeric_col in df.columns:
             df[numeric_col] = pd.to_numeric(df[numeric_col], errors="coerce")
 
     existing_cols = [c for c in final_cols if c in df.columns]
-    
+
     return df[existing_cols]
 
 
@@ -167,7 +190,8 @@ def process_grouped_endpoints(url_nuevo, url_antiguo, base_filename, method, dat
     data_antiguo, meta_antiguo = fetch_data(url_antiguo, method)
 
     df_nuevo = transform_dataset(data_nuevo, meta_nuevo, "nuevo", add_metadata)
-    df_antiguo = transform_dataset(data_antiguo, meta_antiguo, "antiguo", add_metadata)
+    df_antiguo = transform_dataset(
+        data_antiguo, meta_antiguo, "antiguo", add_metadata)
 
     dfs_to_concat = []
     if not df_antiguo.empty:
@@ -177,9 +201,12 @@ def process_grouped_endpoints(url_nuevo, url_antiguo, base_filename, method, dat
 
     if dfs_to_concat:
         df_total = pd.concat(dfs_to_concat, ignore_index=True)
-        save_dataframe(df_total, base_filename, data_dir, execution_id, output_formats)
+        save_dataframe(df_total, base_filename, data_dir,
+                       execution_id, output_formats)
     else:
-        logging.error(f"No valid data retrieved for {base_filename}")
+        logging.error(
+            f"No valid data retrieved for {base_filename}. Fallando ejecución.")
+        sys.exit(1)
 
 
 def process_datos_endpoint(url, base_filename, data_dir, execution_id, output_formats, add_metadata):
@@ -187,7 +214,8 @@ def process_datos_endpoint(url, base_filename, data_dir, execution_id, output_fo
     logging.info(f"Processing {base_filename}...")
     data, meta = fetch_data(url, "GET")
     if not data:
-        return
+        logging.error(f"No se pudo obtener data de {url}. Fallando ejecución.")
+        sys.exit(1)
 
     # Extract dicts inside the returned JSON payload
     data_nuevo = [data.get("nuevo")] if data.get("nuevo") else []
@@ -204,9 +232,12 @@ def process_datos_endpoint(url, base_filename, data_dir, execution_id, output_fo
 
     if dfs_to_concat:
         df_total = pd.concat(dfs_to_concat, ignore_index=True)
-        save_dataframe(df_total, base_filename, data_dir, execution_id, output_formats)
+        save_dataframe(df_total, base_filename, data_dir,
+                       execution_id, output_formats)
     else:
-        logging.error(f"No valid data retrieved for {base_filename}")
+        logging.error(
+            f"No valid data retrieved for {base_filename}. Fallando ejecución.")
+        sys.exit(1)
 
 
 def main():
@@ -242,7 +273,7 @@ def main():
 
     output_formats = [f.strip().lower() for f in args.format.split(",")]
     extracts = [e.strip().lower() for e in args.extract_from.split(",")]
-    
+
     logging.info(f"Saving data to {data_dir} in formats: {output_formats}")
     logging.info(f"Including metadata: {args.addmetadata}")
     logging.info(f"Extracting from: {extracts}")
@@ -254,7 +285,7 @@ def main():
             url_antiguo="http://131.0.1.19:3002/postgres2/ultimas-x-horas-antiguo/99999",
             base_filename="postgres2_ultimas-x-horas",
             method="GET",
-            data_dir=data_dir, execution_id=execution_id, 
+            data_dir=data_dir, execution_id=execution_id,
             output_formats=output_formats, add_metadata=args.addmetadata
         )
 
@@ -265,7 +296,7 @@ def main():
             url_antiguo="http://131.0.1.19:3002/postgres2/datos-diarios-antiguo/999999999",
             base_filename="postgres2_datos-diarios",
             method="POST",
-            data_dir=data_dir, execution_id=execution_id, 
+            data_dir=data_dir, execution_id=execution_id,
             output_formats=output_formats, add_metadata=args.addmetadata
         )
 
@@ -274,11 +305,12 @@ def main():
         process_datos_endpoint(
             url="http://131.0.1.19:3002/postgres2/datos",
             base_filename="postgres2_datos",
-            data_dir=data_dir, execution_id=execution_id, 
+            data_dir=data_dir, execution_id=execution_id,
             output_formats=output_formats, add_metadata=args.addmetadata
         )
 
     logging.info("Extraction and transformation completed successfully.")
+
 
 if __name__ == "__main__":
     main()
