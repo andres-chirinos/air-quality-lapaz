@@ -1,6 +1,13 @@
 #!/usr/bin/env python3
 import os
 import time
+import logging
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S"
+)
 import json
 import requests
 import hashlib
@@ -25,23 +32,21 @@ def check_connection(url="http://131.0.1.19:3002/", retries=3, delay_seconds=300
     """Check if the base URL is reachable, with retries."""
     for attempt in range(1, retries + 1):
         try:
-            result = subprocess.run(["curl", "-I", url],
-                                    stdout=subprocess.PIPE,
-                                    stderr=subprocess.PIPE,
-                                    timeout=10)
-            if result.returncode == 0:
-                print(f"{url} respondió correctamente en el intento {attempt}.")
+            # Using requests.head() which is equivalent to curl -I
+            response = requests.head(url, timeout=10)
+            if response.status_code == 200:
+                logging.info(f"{url} respondió correctamente en el intento {attempt}.")
                 return True
             else:
-                print(f"Intento {attempt}/{retries}: No se pudo alcanzar {url}.")
+                logging.info(f"Intento {attempt}/{retries}: Código HTTP {response.status_code} devuelto por {url}.")
         except Exception as e:
-            print(f"Intento {attempt}/{retries}: Error al hacer curl a {url}: {e}")
+            logging.error(f"Intento {attempt}/{retries}: Error al conectar a {url}: {e}")
             
         if attempt < retries:
-            print(f"Esperando {delay_seconds // 60} minutos antes del siguiente intento...")
+            logging.info(f"Esperando {delay_seconds // 60} minutos antes del siguiente intento...")
             time.sleep(delay_seconds)
             
-    print(f"Falló la conexión a {url} tras {retries} intentos. Saltando todo.")
+    logging.error(f"Falló la conexión a {url} tras {retries} intentos. Saltando todo.")
     return False
 
 
@@ -65,15 +70,15 @@ def fetch_data(url, method='GET', retries=3, delay_seconds=300):
                 }
                 return data, metadata
             else:
-                print(f"Intento {attempt}/{retries}: Falló la extracción de {url}. Status: {response.status_code}")
+                logging.error(f"Intento {attempt}/{retries}: Falló la extracción de {url}. Status: {response.status_code}")
         except Exception as e:
-            print(f"Intento {attempt}/{retries}: Error de conexión al extraer {url}: {e}")
+            logging.error(f"Intento {attempt}/{retries}: Error de conexión al extraer {url}: {e}")
             
         if attempt < retries:
-            print(f"Esperando {delay_seconds // 60} minutos antes de volver a intentar la extracción...")
+            logging.info(f"Esperando {delay_seconds // 60} minutos antes de volver a intentar la extracción...")
             time.sleep(delay_seconds)
             
-    print(f"Se agotaron los {retries} intentos para {url}.")
+    logging.warning(f"Se agotaron los {retries} intentos para {url}.")
     return None, None
 
 
@@ -131,7 +136,7 @@ def transform_dataset(data, metadata, fuente, add_metadata=False):
 def save_dataframe(df, base_filename, data_dir, execution_id, output_formats):
     """Save concatenated DataFrame to Disk in requested formats."""
     if df.empty:
-        print(f"No data to save for {base_filename}")
+        logging.info(f"No data to save for {base_filename}")
         return
 
     for fmt in output_formats:
@@ -149,15 +154,15 @@ def save_dataframe(df, base_filename, data_dir, execution_id, output_formats):
             df.columns = df.columns.astype(str)
             df.to_parquet(filepath, index=False)
         else:
-            print(f"Unsupported format: {fmt}")
+            logging.warning(f"Unsupported format: {fmt}")
             continue
 
-        print(f"Saved {filepath} with {len(df)} rows.")
+        logging.info(f"Saved {filepath} with {len(df)} rows.")
 
 
 def process_grouped_endpoints(url_nuevo, url_antiguo, base_filename, method, data_dir, execution_id, output_formats, add_metadata):
     """Fetch, transform, and concatenate grouped Nuevo and Antiguo endpoints."""
-    print(f"Processing {base_filename}...")
+    logging.info(f"Processing {base_filename}...")
     data_nuevo, meta_nuevo = fetch_data(url_nuevo, method)
     data_antiguo, meta_antiguo = fetch_data(url_antiguo, method)
 
@@ -174,12 +179,12 @@ def process_grouped_endpoints(url_nuevo, url_antiguo, base_filename, method, dat
         df_total = pd.concat(dfs_to_concat, ignore_index=True)
         save_dataframe(df_total, base_filename, data_dir, execution_id, output_formats)
     else:
-        print(f"No valid data retrieved for {base_filename}")
+        logging.error(f"No valid data retrieved for {base_filename}")
 
 
 def process_datos_endpoint(url, base_filename, data_dir, execution_id, output_formats, add_metadata):
     """Specific processing for the single /datos endpoint that contains both."""
-    print(f"Processing {base_filename}...")
+    logging.info(f"Processing {base_filename}...")
     data, meta = fetch_data(url, "GET")
     if not data:
         return
@@ -201,7 +206,7 @@ def process_datos_endpoint(url, base_filename, data_dir, execution_id, output_fo
         df_total = pd.concat(dfs_to_concat, ignore_index=True)
         save_dataframe(df_total, base_filename, data_dir, execution_id, output_formats)
     else:
-        print(f"No valid data retrieved for {base_filename}")
+        logging.error(f"No valid data retrieved for {base_filename}")
 
 
 def main():
@@ -236,14 +241,14 @@ def main():
     execution_id = ""
     if args.append_timestamp:
         execution_id = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-        print(f"Starting extraction with execution ID: {execution_id}")
+        logging.info(f"Starting extraction with execution ID: {execution_id}")
 
     output_formats = [f.strip().lower() for f in args.format.split(",")]
     extracts = [e.strip().lower() for e in args.extract_from.split(",")]
     
-    print(f"Saving data to {data_dir} in formats: {output_formats}")
-    print(f"Including metadata: {args.addmetadata}")
-    print(f"Extracting from: {extracts}")
+    logging.info(f"Saving data to {data_dir} in formats: {output_formats}")
+    logging.info(f"Including metadata: {args.addmetadata}")
+    logging.info(f"Extracting from: {extracts}")
 
     # 1. Process ultimas-x-horas ("hours")
     if "hours" in extracts:
@@ -276,7 +281,7 @@ def main():
             output_formats=output_formats, add_metadata=args.addmetadata
         )
 
-    print("Extraction and transformation completed successfully.")
+    logging.info("Extraction and transformation completed successfully.")
 
 if __name__ == "__main__":
     main()
