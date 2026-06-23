@@ -50,7 +50,7 @@ def check_connection(url="http://131.0.1.19:3002/", retries=3, delay_seconds=300
     return False
 
 
-def fetch_data(url, method='GET', retries=3, delay_seconds=300):
+def fetch_data(url, method='GET', retries=3, delay_seconds=60):
     """Fetch JSON data and generate metadata for a given URL, with retries."""
     for attempt in range(1, retries + 1):
         try:
@@ -224,9 +224,6 @@ def main():
     parser.add_argument("--extract-from", type=str, default="hours",
                         help="Endpoints to extract from: 'now', 'hours', 'days', or comma-separated list. Defaults to 'hours'.")
     args = parser.parse_args()
-
-    if not check_connection("http://131.0.1.19:3002/"):
-        return
 
     # Determine data directory
     if args.data_dir:
