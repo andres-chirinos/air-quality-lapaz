@@ -25,17 +25,15 @@ def check_connection(url="http://131.0.1.19:3002/", retries=3, delay_seconds=300
     """Check if the base URL is reachable, with retries."""
     for attempt in range(1, retries + 1):
         try:
-            result = subprocess.run(["curl", "-I", url],
-                                    stdout=subprocess.PIPE,
-                                    stderr=subprocess.PIPE,
-                                    timeout=10)
-            if result.returncode == 0:
+            # Using requests.head() which is equivalent to curl -I
+            response = requests.head(url, timeout=10)
+            if response.status_code == 200:
                 print(f"{url} respondió correctamente en el intento {attempt}.")
                 return True
             else:
-                print(f"Intento {attempt}/{retries}: No se pudo alcanzar {url}.")
+                print(f"Intento {attempt}/{retries}: Código HTTP {response.status_code} devuelto por {url}.")
         except Exception as e:
-            print(f"Intento {attempt}/{retries}: Error al hacer curl a {url}: {e}")
+            print(f"Intento {attempt}/{retries}: Error al conectar a {url}: {e}")
             
         if attempt < retries:
             print(f"Esperando {delay_seconds // 60} minutos antes del siguiente intento...")
