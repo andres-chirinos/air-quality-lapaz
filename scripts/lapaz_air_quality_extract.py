@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import os
+import time
 import json
 import requests
 import hashlib
@@ -20,48 +21,60 @@ METADATA_COLUMNS = [
 ]
 
 
-def check_connection(url="http://131.0.1.19:3002/"):
-    """Check if the base URL is reachable."""
-    try:
-        result = subprocess.run(["curl", "-I", url],
-                                stdout=subprocess.PIPE,
-                                stderr=subprocess.PIPE,
-                                timeout=5)
-        if result.returncode != 0:
-            print(f"No se pudo alcanzar {url}. Saltando todo.")
-            return False
-        else:
-            print(f"{url} respondió correctamente.")
-            return True
-    except Exception as e:
-        print(f"Error al hacer curl a {url}: {e}. Saltando todo.")
-        return False
+def check_connection(url="http://131.0.1.19:3002/", retries=3, delay_seconds=300):
+    """Check if the base URL is reachable, with retries."""
+    for attempt in range(1, retries + 1):
+        try:
+            result = subprocess.run(["curl", "-I", url],
+                                    stdout=subprocess.PIPE,
+                                    stderr=subprocess.PIPE,
+                                    timeout=10)
+            if result.returncode == 0:
+                print(f"{url} respondió correctamente en el intento {attempt}.")
+                return True
+            else:
+                print(f"Intento {attempt}/{retries}: No se pudo alcanzar {url}.")
+        except Exception as e:
+            print(f"Intento {attempt}/{retries}: Error al hacer curl a {url}: {e}")
+            
+        if attempt < retries:
+            print(f"Esperando {delay_seconds // 60} minutos antes del siguiente intento...")
+            time.sleep(delay_seconds)
+            
+    print(f"Falló la conexión a {url} tras {retries} intentos. Saltando todo.")
+    return False
 
 
-def fetch_data(url, method='GET'):
-    """Fetch JSON data and generate metadata for a given URL."""
-    try:
-        if method.upper() == 'POST':
-            response = requests.post(url, timeout=100)
-        else:
-            response = requests.get(url, timeout=100)
+def fetch_data(url, method='GET', retries=3, delay_seconds=300):
+    """Fetch JSON data and generate metadata for a given URL, with retries."""
+    for attempt in range(1, retries + 1):
+        try:
+            if method.upper() == 'POST':
+                response = requests.post(url, timeout=100)
+            else:
+                response = requests.get(url, timeout=100)
 
-        if response.status_code in [200, 201]:
-            data = response.json()
-            metadata = {
-                "_metadata_source": url,
-                "_metadata_request_status": response.status_code,
-                "_metadata_timestamp": datetime.datetime.now().isoformat(),
-                "_metadata_unix_timestamp": int(datetime.datetime.now().timestamp()),
-                "_metadata_hash": hashlib.md5(json.dumps(data).encode("utf-8")).hexdigest()
-            }
-            return data, metadata
-        else:
-            print(f"Failed to fetch {url}. Status code: {response.status_code}")
-            return None, None
-    except Exception as e:
-        print(f"Error fetching {url}: {e}")
-        return None, None
+            if response.status_code in [200, 201]:
+                data = response.json()
+                metadata = {
+                    "_metadata_source": url,
+                    "_metadata_request_status": response.status_code,
+                    "_metadata_timestamp": datetime.datetime.now().isoformat(),
+                    "_metadata_unix_timestamp": int(datetime.datetime.now().timestamp()),
+                    "_metadata_hash": hashlib.md5(json.dumps(data).encode("utf-8")).hexdigest()
+                }
+                return data, metadata
+            else:
+                print(f"Intento {attempt}/{retries}: Falló la extracción de {url}. Status: {response.status_code}")
+        except Exception as e:
+            print(f"Intento {attempt}/{retries}: Error de conexión al extraer {url}: {e}")
+            
+        if attempt < retries:
+            print(f"Esperando {delay_seconds // 60} minutos antes de volver a intentar la extracción...")
+            time.sleep(delay_seconds)
+            
+    print(f"Se agotaron los {retries} intentos para {url}.")
+    return None, None
 
 
 def transform_dataset(data, metadata, fuente, add_metadata=False):
