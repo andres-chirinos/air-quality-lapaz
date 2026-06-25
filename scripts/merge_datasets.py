@@ -69,6 +69,17 @@ def merge_datasets():
     residual_columns = []  # [c for c in consolidated_df.columns if c not in existing_ordered]
     consolidated_df = consolidated_df[existing_ordered + residual_columns]
 
+    # VALIDATION: Remove erroneous records (valor_ica <= 0 or valor_ica > 500)
+    if "valor_ica" in consolidated_df.columns:
+        initial_count = len(consolidated_df)
+        consolidated_df["valor_ica"] = pd.to_numeric(consolidated_df["valor_ica"], errors="coerce")
+        # Keep only valid rows (0 < valor_ica <= 500) and preserve rows without valor_ica (NaN)
+        valid_mask = consolidated_df["valor_ica"].isna() | ((consolidated_df["valor_ica"] > 0) & (consolidated_df["valor_ica"] <= 500))
+        consolidated_df = consolidated_df[valid_mask]
+        removed_count = initial_count - len(consolidated_df)
+        if removed_count > 0:
+            logging.info(f"Se eliminaron {removed_count} registros erróneos (ICA <= 0 o ICA > 500).")
+
     # Opcional: eliminar duplicados si los hubiera
     # consolidated_df = consolidated_df.drop_duplicates()
 
