@@ -266,3 +266,28 @@ Plot.plot({
   ]
 })
 ```
+
+### Row {height=35%}
+
+```{ojs}
+//| title: 🏆 Agradecimientos a Instituciones (Registros Aportados por Fuente)
+Plot.plot({
+  marginLeft: 280,
+  x: { label: "Cantidad de Registros", grid: true },
+  y: { label: null },
+  color: { scheme: "Tableau10" },
+  marks: [
+    Plot.barX(filteredData, Plot.groupY({x: "count"}, {
+      y: "fuente", 
+      fill: "fuente", 
+      sort: {y: "x", reverse: true}
+    })),
+    Plot.text(filteredData, Plot.groupY({x: "count", text: "count"}, {
+      y: "fuente", 
+      textAnchor: "start", 
+      dx: 5, 
+      sort: {y: "x", reverse: true}
+    }))
+  ]
+})
+```
