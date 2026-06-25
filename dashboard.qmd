@@ -1,0 +1,268 @@
+---
+title: "Monitoreo de Calidad del Aire (ICA)"
+format: 
+  dashboard:
+    scrolling: true
+    theme: lux
+    nav-buttons:
+      - icon: database
+        href: https://www.kaggle.com/datasets/sociest/calidad-aire-monica/
+        aria-label: Kaggle Dataset
+        text: "Dataset"
+---
+
+```{ojs}
+//| output: false
+// Cargar datos
+rawData = FileAttachment("data/consolidated/air_quality_consolidated.csv").csv({typed: true})
+
+// Parsear fechas, calcular categorías y extraer métricas
+data = rawData.map(d => {
+  const dateObj = new Date(d.fecha_hora_registro);
+  const ica = +d.valor_ica;
+  const lat = +d.latitude;
+  const lon = +d.longitude;
+  
+  let cat = "Desconocido";
+  let color = "#999999";
+  if (ica <= 50) { cat = "Buena"; color = "#00e400"; }
+  else if (ica <= 100) { cat = "Moderada"; color = "#ffff00"; }
+  else if (ica <= 150) { cat = "Dañina a Grupos Sensibles"; color = "#ff7e00"; }
+  else if (ica <= 200) { cat = "Dañina a la Salud"; color = "#ff0000"; }
+  else if (ica <= 300) { cat = "Muy Dañina"; color = "#8f3f97"; }
+  else { cat = "Peligrosa"; color = "#7e0023"; }
+
+  return {
+    ...d,
+    date: dateObj,
+    hour: dateObj.getHours(),
+    ica: ica,
+    latitude: lat,
+    longitude: lon,
+    // Diferenciar lugares combinando el nombre con 3 dígitos de sus coordenadas
+    lugar_nombre: `${d.lugar_nombre} [${lat.toFixed(3)}, ${lon.toFixed(3)}]`,
+    categoria: cat,
+    color: color
+  };
+}).filter(d => !isNaN(d.ica) && d.ica > 0 && d.ica <= 500 && !isNaN(d.latitude) && !isNaN(d.longitude))
+  .sort((a, b) => d3.ascending(a.date, b.date));
+
+lugares = Array.from(new Set(data.map(d => d.lugar_nombre))).sort()
+
+minDateStr = d3.min(data, d => d.date).toISOString().split('T')[0]
+maxDateStr = d3.max(data, d => d.date).toISOString().split('T')[0]
+```
+
+## Column {.sidebar}
+
+**Filtros de Búsqueda**  
+Utilice las siguientes opciones para explorar los datos.
+
+<style>
+  .sidebar form {
+    margin-bottom: 1.5rem !important;
+  }
+  .sidebar input[type="date"], .sidebar select, .sidebar input[type="range"] {
+    padding: 0.4rem 0.5rem !important;
+    border-radius: 4px;
+    height: 35px;
+  }
+</style>
+
+---
+
+```{ojs}
+viewof selectedLugar = Inputs.select(["Todos"].concat(lugares), {label: "Ubicación:", value: "Todos"})
+```
+
+---
+
+```{ojs}
+viewof startDateStr = Inputs.date({label: "Desde:", value: minDateStr})
+viewof endDateStr = Inputs.date({label: "Hasta:", value: maxDateStr})
+```
+
+---
+
+```{ojs}
+viewof startHour = Inputs.range([0, 23], {label: "Hora Mín.", step: 1, value: 0})
+viewof endHour = Inputs.range([0, 23], {label: "Hora Máx.", step: 1, value: 23})
+```
+
+```{ojs}
+//| output: false
+// Lógica de filtrado
+filteredData = data.filter(d => {
+  const locMatch = selectedLugar === "Todos" || d.lugar_nombre === selectedLugar;
+  const hourMatch = d.hour >= startHour && d.hour <= endHour;
+  
+  let dateMatch = true;
+  if (startDateStr) {
+    const sDate = new Date(startDateStr);
+    dateMatch = dateMatch && (d.date >= sDate);
+  }
+  if (endDateStr) {
+    const eDate = new Date(endDateStr);
+    eDate.setHours(23, 59, 59);
+    dateMatch = dateMatch && (d.date <= eDate);
+  }
+  
+  return locMatch && hourMatch && dateMatch;
+})
+
+avgIca = filteredData.length ? d3.mean(filteredData, d => d.ica) : 0
+maxIca = filteredData.length ? d3.max(filteredData, d => d.ica) : 0
+```
+
+## Column
+
+### Row {height=20%}
+
+```{ojs}
+//| component: valuebox
+//| title: Registros Filtrados
+//| icon: list
+//| color: secondary
+filteredData.length
+```
+
+```{ojs}
+//| component: valuebox
+//| title: ICA Promedio
+//| icon: activity
+//| color: primary
+Number(avgIca.toFixed(1))
+```
+
+```{ojs}
+//| component: valuebox
+//| title: ICA Máximo Crítico
+//| icon: exclamation-triangle
+//| color: danger
+Number(maxIca.toFixed(1))
+```
+
+### Row {height=45%}
+
+#### Column {width=60%}
+
+```{ojs}
+//| title: Mapa de Calor Interactivo (Promedio ICA)
+//| padding: 0
+mapData = Array.from(d3.rollup(filteredData, 
+  v => ({
+    lugar_nombre: v[0].lugar_nombre,
+    latitude: v[0].latitude,
+    longitude: v[0].longitude,
+    ica: d3.mean(v, d => d.ica)
+  }), 
+  d => d.lugar_nombre
+).values())
+
+mapContainer = {
+  const div = document.createElement("div");
+  div.style.height = "100%";
+  div.style.minHeight = "400px";
+  div.style.width = "100%";
+  div.style.borderRadius = "8px";
+  div.style.zIndex = "1";
+  
+  const map = L.map(div).setView([-16.29, -63.58], 5);
+  
+  // Capa base de OpenStreetMap (estilo limpio)
+  L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png", {
+    attribution: "© OpenStreetMap contributors © CARTO"
+  }).addTo(map);
+  
+  // Agregar marcadores para cada ciudad en el mapData
+  mapData.forEach(d => {
+    // Escala de colores estricta de ICA
+    let color = "#00e400";
+    if (d.ica > 300) color = "#7e0023";
+    else if (d.ica > 200) color = "#8f3f97";
+    else if (d.ica > 150) color = "#ff0000";
+    else if (d.ica > 100) color = "#ff7e00";
+    else if (d.ica > 50) color = "#ffff00";
+
+    // Mancha de calor expansiva proporcional al ICA
+    L.circleMarker([d.latitude, d.longitude], {
+      radius: Math.min(50, Math.max(15, d.ica / 2)),
+      fillColor: color,
+      color: color,
+      weight: 0,
+      fillOpacity: 0.5
+    }).bindTooltip("<b>" + d.lugar_nombre + "</b><br>ICA Promedio: " + d.ica.toFixed(1), {direction: "top"})
+      .addTo(map);
+
+    // Punto central geográfico exacto
+    L.circleMarker([d.latitude, d.longitude], {
+      radius: 4,
+      fillColor: "#222",
+      color: "white",
+      weight: 1.5,
+      fillOpacity: 1
+    }).addTo(map);
+  });
+  
+  // Limpieza vital de memoria para evitar "Map already initialized"
+  invalidation.then(() => map.remove());
+  
+  return div;
+}
+```
+
+```{ojs}
+//| output: false
+L = {
+  const L = await require("leaflet@1.9.4");
+  const link = document.createElement("link");
+  link.rel = "stylesheet";
+  link.href = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css";
+  document.head.appendChild(link);
+  return L;
+}
+```
+
+#### Column {width=40%}
+
+```{ojs}
+//| title: Frecuencia de Niveles de Peligrosidad
+Plot.plot({
+  marginLeft: 150,
+  x: { label: "Cantidad de Registros", grid: true },
+  y: { label: null },
+  color: {
+    domain: ["Buena", "Moderada", "Dañina a Grupos Sensibles", "Dañina a la Salud", "Muy Dañina", "Peligrosa"],
+    range: ["#00e400", "#ffff00", "#ff7e00", "#ff0000", "#8f3f97", "#7e0023"]
+  },
+  marks: [
+    Plot.barX(filteredData, Plot.groupY({x: "count"}, {y: "categoria", fill: "categoria", sort: {y: "x", reverse: true}})),
+    Plot.text(filteredData, Plot.groupY({x: "count", text: "count"}, {y: "categoria", textAnchor: "start", dx: 4, sort: {y: "x", reverse: true}}))
+  ]
+})
+```
+
+### Row {height=40%}
+
+```{ojs}
+//| title: Línea de Tiempo de Calidad del Aire (ICA)
+Plot.plot({
+  marginLeft: 50,
+  y: { grid: true, label: "Valor ICA" },
+  x: { label: "Fecha" },
+  color: {
+    domain: ["Buena", "Moderada", "Dañina a Grupos Sensibles", "Dañina a la Salud", "Muy Dañina", "Peligrosa"],
+    range: ["#00e400", "#ffff00", "#ff7e00", "#ff0000", "#8f3f97", "#7e0023"]
+  },
+  marks: [
+    Plot.ruleY([50, 100, 150, 200, 300], {strokeOpacity: 0.2, strokeDasharray: "2,2"}),
+    Plot.dot(filteredData, {
+      x: "date", 
+      y: "ica", 
+      fill: "categoria",
+      title: d => `${d.lugar_nombre}\n${d.date.toLocaleString()}\nICA: ${d.ica}`
+    }),
+    Plot.lineY(filteredData, Plot.windowY({k: 14, reduce: "mean"}, {x: "date", y: "ica", stroke: "black", strokeOpacity: 0.5}))
+  ]
+})
+```
