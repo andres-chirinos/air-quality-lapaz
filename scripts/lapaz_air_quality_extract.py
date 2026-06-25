@@ -131,7 +131,7 @@ def transform_dataset(data, metadata, fuente, add_metadata=False):
     # Add dataset source label and standard location fields for interoperability
     df = df.assign(
         fuente="Sistema de Calidad de Aire de la Ciudad de La Paz",
-        lugar_nombre="La Paz",
+        lugar_nombre="LA PAZ",
         latitude=lat,
         longitude=lon
     )
@@ -140,6 +140,22 @@ def transform_dataset(data, metadata, fuente, add_metadata=False):
     for date_col in ["fecha_hora_registro", "fecha_hora_calculo", "_metadata_timestamp"]:
         if date_col in df.columns:
             df[date_col] = pd.to_datetime(df[date_col])
+
+    # Fix nulls: if fecha_hora_registro is null, use fecha_hora_calculo as fallback
+    if "fecha_hora_registro" in df.columns and "fecha_hora_calculo" in df.columns:
+        df["fecha_hora_registro"] = df["fecha_hora_registro"].fillna(
+            df["fecha_hora_calculo"])
+
+    # Drop rows that still have no date
+    if "fecha_hora_registro" in df.columns:
+        df = df.dropna(subset=["fecha_hora_registro"])
+
+    # Ensure all dates are exported in strict ISO 8601 format
+    for date_col in ["fecha_hora_registro", "fecha_hora_calculo", "_metadata_timestamp"]:
+        if date_col in df.columns:
+            df[date_col] = df[date_col].apply(
+                lambda x: x.isoformat() if pd.notnull(x) else None
+            )
 
     # Rename specific columns and drop unnecessary ones
     if fuente == "antiguo":

@@ -73,12 +73,25 @@ def merge_datasets():
     if "valor_ica" in consolidated_df.columns:
         initial_count = len(consolidated_df)
         consolidated_df["valor_ica"] = pd.to_numeric(consolidated_df["valor_ica"], errors="coerce")
-        # Keep only valid rows (0 < valor_ica <= 500) and preserve rows without valor_ica (NaN)
-        valid_mask = consolidated_df["valor_ica"].isna() | ((consolidated_df["valor_ica"] > 0) & (consolidated_df["valor_ica"] <= 500))
+        # Keep only valid rows (0 < valor_ica <= 500) and drop rows without valor_ica (NaN)
+        valid_mask = (consolidated_df["valor_ica"] > 0) & (consolidated_df["valor_ica"] <= 500)
         consolidated_df = consolidated_df[valid_mask]
         removed_count = initial_count - len(consolidated_df)
         if removed_count > 0:
             logging.info(f"Se eliminaron {removed_count} registros erróneos (ICA <= 0 o ICA > 500).")
+
+    # VALIDATION: Remove records with no date
+    if "fecha_hora_registro" in consolidated_df.columns:
+        initial_count = len(consolidated_df)
+        consolidated_df = consolidated_df.dropna(subset=["fecha_hora_registro"])
+        removed_count = initial_count - len(consolidated_df)
+        if removed_count > 0:
+            logging.info(f"Se eliminaron {removed_count} registros erróneos (sin fecha de registro).")
+
+    # Ensure coordinates are numeric to avoid pyarrow ArrowTypeError on mixed types
+    for col in ["latitude", "longitude"]:
+        if col in consolidated_df.columns:
+            consolidated_df[col] = pd.to_numeric(consolidated_df[col], errors="coerce")
 
     # Opcional: eliminar duplicados si los hubiera
     # consolidated_df = consolidated_df.drop_duplicates()

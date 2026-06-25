@@ -211,6 +211,9 @@ def process_historical_endpoints(base_filename, data_dir, execution_id, output_f
         if date_col in df_raw.columns:
             df_raw[date_col] = pd.to_datetime(
                 df_raw[date_col], errors='coerce')
+            df_raw[date_col] = df_raw[date_col].apply(
+                lambda x: x.isoformat() if pd.notnull(x) else None
+            )
 
     if "valor_original" in df_raw.columns:
         df_raw = df_raw.rename(columns={"valor_original": "valor"})
