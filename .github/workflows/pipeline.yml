@@ -26,12 +26,14 @@ jobs:
       - name: Extracción
         run: |
           python scripts/lapaz_air_quality_extract.py --format csv,parquet --extract-from hours
+          python scripts/monica_siarh_extract.py --format csv,parquet
+          python scripts/merge_datasets.py
 
       - name: Subida a Kaggle
         env:
           KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
         run: |
           python scripts/upload_kaggle.py \
-            --input-dir data \
+            --input-dir data/consolidated \
             --kaggle-id sociest/calidad-aire-monica \
             --version-message "Automatic Upload $(date -u +%Y-%m-%d)"

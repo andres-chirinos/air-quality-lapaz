@@ -19,7 +19,8 @@ logging.basicConfig(
 
 COLUMNS_FILTERS = [
     "id_parametro", "valor", "valor_ica",
-    "fecha_hora_registro", "fecha_hora_calculo", "observaciones"
+    "fecha_hora_registro", "fecha_hora_calculo", "observaciones",
+    "latitude", "longitude", "lugar_nombre"
 ]
 
 METADATA_COLUMNS = [
@@ -119,8 +120,21 @@ def transform_dataset(data, metadata, fuente, add_metadata=False):
         for key, value in metadata.items():
             df[key] = value
 
-    # Add dataset source label
-    df = df.assign(fuente=fuente)
+    # Determine coordinates based on source
+    if fuente == "antiguo":
+        lat, lon = "-16.5424872", "-68.0716009"
+    elif fuente == "nuevo":
+        lat, lon = "-16.4977984", "-68.1336858"
+    else:
+        lat, lon = None, None
+
+    # Add dataset source label and standard location fields for interoperability
+    df = df.assign(
+        fuente="Sistema de Calidad de Aire de la Ciudad de La Paz",
+        lugar_nombre="La Paz",
+        latitude=lat,
+        longitude=lon
+    )
 
     # Cast dates to datetime where possible
     for date_col in ["fecha_hora_registro", "fecha_hora_calculo", "_metadata_timestamp"]:
