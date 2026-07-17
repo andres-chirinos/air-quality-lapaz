@@ -131,7 +131,7 @@ def transform_dataset(data, metadata, fuente, add_metadata=False):
     # Add dataset source label and standard location fields for interoperability
     df = df.assign(
         fuente="Sistema de Calidad de Aire de la Ciudad de La Paz",
-        lugar_nombre="LA PAZ",
+        lugar_nombre="LA PAZ - HOSPITAL LOS PINOS" if fuente == "antiguo" else "LA PAZ - GARAJE MUNICIPAL",
         latitude=lat,
         longitude=lon
     )
@@ -283,7 +283,7 @@ def main():
     parser.add_argument("--addmetadata", action="store_true",
                         help="Include request metadata columns in the output files.")
     parser.add_argument("--extract-from", type=str, default="hours",
-                        help="Endpoints to extract from: 'now', 'hours', 'days', or comma-separated list. Defaults to 'hours'.")
+                        help="Endpoints to extract from: 'hours', 'days', or comma-separated list. Defaults to 'hours'.")
     args = parser.parse_args()
 
     # Determine data directory
@@ -330,15 +330,8 @@ def main():
             output_formats=output_formats, add_metadata=args.addmetadata
         )
 
-    # 3. Process datos ("now")
-    if "now" in extracts:
-        process_datos_endpoint(
-            url="http://131.0.1.19:3002/postgres2/datos",
-            base_filename="postgres2_datos",
-            data_dir=data_dir, execution_id=execution_id,
-            output_formats=output_formats, add_metadata=args.addmetadata
-        )
-
+    # 3. Eliminar 'now' extraction por ser ruidoso (A petición)
+    # The 'now' endpoint is no longer extracted.
     logging.info("Extraction and transformation completed successfully.")
 
 

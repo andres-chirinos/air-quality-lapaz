@@ -27,6 +27,8 @@ jobs:
         run: |
           python scripts/lapaz_air_quality_extract.py --format csv,parquet --extract-from hours
           python scripts/monica_siarh_extract.py --format csv,parquet
+          python scripts/potosi_air_quality_extract.py --format csv,parquet
+          python scripts/senamhi_alerts_extract.py --format geojson,parquet
           python scripts/merge_datasets.py
 
       - name: Subida a Kaggle
