@@ -3,7 +3,7 @@ name: ETL Kaggle Data
 on:
   workflow_dispatch:
   schedule:
-    - cron: "0 0 1 1,4,7,10 *"
+    - cron: "0 0 * * 0"
 
 jobs:
   ejecutar:
@@ -29,6 +29,8 @@ jobs:
           python scripts/monica_siarh_extract.py --format csv,parquet
           python scripts/potosi_air_quality_extract.py --format csv,parquet
           python scripts/senamhi_alerts_extract.py --format geojson,parquet
+          python scripts/senamhi_hidro_stations_export.py --format csv,parquet
+          python scripts/senamhi_sequias_extract.py --format csv,parquet
           python scripts/merge_datasets.py
 
       - name: Subida a Kaggle
